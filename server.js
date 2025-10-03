@@ -546,3 +546,180 @@ if (process.env.NODE_ENV !== "test") {
 }
 
 export default app;
+
+// ----------------- Lab tests & Unified calendar events (NEW) -----------------
+
+// Create a lab test (patient)
+app.post("/lab-tests", authenticateToken, authorizeRoles("patient"), async (req, res) => {
+  const { test_name, test_date, report_url } = req.body;
+  if (!test_name || !test_date) {
+    return res.status(400).json({ message: "test_name and test_date (YYYY-MM-DD) required" });
+  }
+  if (!validateDateISO(test_date)) {
+    return res.status(400).json({ message: "test_date must be YYYY-MM-DD" });
+  }
+
+  try {
+    const [result] = await pool.query(
+      "INSERT INTO lab_tests (patient_user_id, test_name, test_date, status, report_url, created_at) VALUES (?, ?, ?, 'pending', ?, NOW())",
+      [req.user.id, test_name, test_date, report_url || null]
+    );
+    return res.status(201).json({ id: result.insertId, message: "Lab test scheduled" });
+  } catch (err) {
+    console.error("CREATE LAB TEST ERR:", err && err.stack ? err.stack : err);
+    return res.status(500).json({ message: "Failed to schedule lab test" });
+  }
+});
+
+// List lab tests for logged-in patient
+app.get("/lab-tests", authenticateToken, authorizeRoles("patient"), async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      "SELECT id, test_name, test_date, status, report_url, created_at FROM lab_tests WHERE patient_user_id = ? ORDER BY test_date ASC",
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error("GET LAB TESTS ERR:", err && err.stack ? err.stack : err);
+    res.status(500).json({ message: "Failed to fetch lab tests" });
+  }
+});
+
+// Mark lab test completed (patient)
+app.put("/lab-tests/:id/complete", authenticateToken, authorizeRoles("patient"), async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    const [result] = await pool.query("UPDATE lab_tests SET status = 'completed' WHERE id = ? AND patient_user_id = ?", [id, req.user.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ message: "Lab test not found or not authorized" });
+    res.json({ message: "Lab test marked completed" });
+  } catch (err) {
+    console.error("COMPLETE LAB ERR:", err && err.stack ? err.stack : err);
+    res.status(500).json({ message: "Failed to update lab test" });
+  }
+});
+
+// Upload/attach report URL for lab test (patient)
+// (If you later add file upload, change to accept multipart and store URL here)
+app.put("/lab-tests/:id/report", authenticateToken, authorizeRoles("patient"), async (req, res) => {
+  const id = Number(req.params.id);
+  const { report_url } = req.body;
+  if (!report_url) return res.status(400).json({ message: "report_url required" });
+
+  try {
+    const [result] = await pool.query("UPDATE lab_tests SET report_url = ? WHERE id = ? AND patient_user_id = ?", [report_url, id, req.user.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ message: "Lab test not found or not authorized" });
+    res.json({ message: "Report url saved" });
+  } catch (err) {
+    console.error("ATTACH REPORT ERR:", err && err.stack ? err.stack : err);
+    res.status(500).json({ message: "Failed to attach report url" });
+  }
+});
+
+// ----------------- Unified calendar events (patients & doctors) -----------------
+// Purpose: allow patients/doctors to create personal calendar notes or link to existing appointment/lab_test entries.
+// Note: we DO NOT touch existing appointments table; events can reference them via related_type/related_id.
+
+app.post("/calendar/events", authenticateToken, async (req, res) => {
+  // required: title, start_time (YYYY-MM-DD HH:MM:SS)
+  // optional: end_time, description, color, event_type ('note'|'lab_test'|'appointment'), related_type, related_id
+  const { title, start_time, end_time, description, color, event_type, related_type, related_id } = req.body;
+  if (!title || !start_time) {
+    return res.status(400).json({ message: "title and start_time (YYYY-MM-DD HH:MM:SS) required" });
+  }
+  if (!validateDateTimeSQL(start_time) || (end_time && !validateDateTimeSQL(end_time))) {
+    return res.status(400).json({ message: "start_time/end_time must be in YYYY-MM-DD HH:MM:SS format" });
+  }
+
+  try {
+    const [result] = await pool.query(
+      `INSERT INTO calendar_events (user_id, event_type, related_type, related_id, title, description, start_time, end_time, color, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [req.user.id, event_type || "note", related_type || null, related_id || null, title, description || null, start_time, end_time || null, color || null]
+    );
+    res.status(201).json({ id: result.insertId, message: "Event created" });
+  } catch (err) {
+    console.error("CREATE EVENT ERR:", err && err.stack ? err.stack : err);
+    res.status(500).json({ message: "Failed to create event" });
+  }
+});
+
+// Get calendar events for logged-in user (both roles)
+app.get("/calendar/events", authenticateToken, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, event_type, related_type, related_id, title, description, start_time, end_time, color FROM calendar_events WHERE user_id = ? ORDER BY start_time ASC`,
+      [req.user.id]
+    );
+
+    // simple shape for FE
+    const events = rows.map((r) => ({
+      id: `ev-${r.id}`,
+      event_type: r.event_type,
+      related_type: r.related_type,
+      related_id: r.related_id,
+      title: r.title,
+      description: r.description,
+      start: r.start_time,
+      end: r.end_time,
+      color: r.color,
+    }));
+    res.json(events);
+  } catch (err) {
+    console.error("GET EVENTS ERR:", err && err.stack ? err.stack : err);
+    res.status(500).json({ message: "Failed to fetch events" });
+  }
+});
+
+// Update an event (owner only)
+app.put("/calendar/events/:id", authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  const { title, description, start_time, end_time, color } = req.body;
+  // allow partial updates
+  const updates = [];
+  const params = [];
+
+  if (title !== undefined) { updates.push("title = ?"); params.push(title); }
+  if (description !== undefined) { updates.push("description = ?"); params.push(description); }
+  if (start_time !== undefined) {
+    if (!validateDateTimeSQL(start_time)) return res.status(400).json({ message: "start_time format invalid" });
+    updates.push("start_time = ?"); params.push(start_time);
+  }
+  if (end_time !== undefined) {
+    if (end_time && !validateDateTimeSQL(end_time)) return res.status(400).json({ message: "end_time format invalid" });
+    updates.push("end_time = ?"); params.push(end_time);
+  }
+  if (color !== undefined) { updates.push("color = ?"); params.push(color); }
+
+  if (updates.length === 0) return res.status(400).json({ message: "No fields to update" });
+
+  try {
+    // ensure ownership
+    const [[ownerRow]] = await pool.query("SELECT user_id FROM calendar_events WHERE id = ? LIMIT 1", [id]);
+    if (!ownerRow) return res.status(404).json({ message: "Event not found" });
+    if (ownerRow.user_id !== req.user.id) return res.status(403).json({ message: "Not authorized to edit this event" });
+
+    params.push(id);
+    const sql = `UPDATE calendar_events SET ${updates.join(", ")} WHERE id = ?`;
+    await pool.query(sql, params);
+    res.json({ message: "Event updated" });
+  } catch (err) {
+    console.error("UPDATE EVENT ERR:", err && err.stack ? err.stack : err);
+    res.status(500).json({ message: "Failed to update event" });
+  }
+});
+
+// Delete an event (owner only)
+app.delete("/calendar/events/:id", authenticateToken, async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    const [[ownerRow]] = await pool.query("SELECT user_id FROM calendar_events WHERE id = ? LIMIT 1", [id]);
+    if (!ownerRow) return res.status(404).json({ message: "Event not found" });
+    if (ownerRow.user_id !== req.user.id) return res.status(403).json({ message: "Not authorized to delete this event" });
+
+    await pool.query("DELETE FROM calendar_events WHERE id = ?", [id]);
+    res.json({ message: "Event deleted" });
+  } catch (err) {
+    console.error("DELETE EVENT ERR:", err && err.stack ? err.stack : err);
+    res.status(500).json({ message: "Failed to delete event" });
+  }
+});
