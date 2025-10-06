@@ -9,6 +9,8 @@ import mysql from "mysql2/promise";
 import dotenv from "dotenv";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import cors from 'cors';
+
 
 dotenv.config();
 
