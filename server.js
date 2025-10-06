@@ -138,11 +138,24 @@ app.post("/signup", authLimiter, async (req, res) => {
 
     await conn.commit();
     res.status(201).json({ message: "User registered successfully" });
-  } catch (err) {
-    // improved logging for Render logs — prints stack or message
-    console.error("LOGIN ERR:", err && err.stack ? err.stack : (err && err.message ? err.message : err));
+    } catch (err) {
+    // DEBUG: print useful DB error props and environment (NOT secrets)
+    try {
+      console.error("LOGIN ERR (full):", err && (err.stack || err));
+      console.error("LOGIN ERR - code:", err && err.code);
+      console.error("LOGIN ERR - errno:", err && err.errno);
+      console.error("LOGIN ERR - sqlMessage:", err && err.sqlMessage);
+      console.error("LOGIN ERR - sqlState:", err && err.sqlState);
+    } catch (e) {
+      console.error("LOGIN ERR - failed to stringify err:", e);
+    }
+    // Also log the DB host/user so we can confirm env injection (do NOT log DB_PASSWORD)
+    console.error("DB_HOST from env:", process.env.DB_HOST);
+    console.error("DB_USER from env:", process.env.DB_USER);
+
     res.status(500).json({ message: "Login error" });
   }
+
  finally {
     conn.release();
   }
