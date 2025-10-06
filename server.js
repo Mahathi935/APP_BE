@@ -139,10 +139,11 @@ app.post("/signup", authLimiter, async (req, res) => {
     await conn.commit();
     res.status(201).json({ message: "User registered successfully" });
   } catch (err) {
-    await conn.rollback().catch(() => {});
-    console.error("SIGNUP ERR:", err && err.stack ? err.stack : err);
-    res.status(500).json({ message: "Error creating user" });
-  } finally {
+    // improved logging for Render logs — prints stack or message
+    console.error("LOGIN ERR:", err && err.stack ? err.stack : (err && err.message ? err.message : err));
+    res.status(500).json({ message: "Login error" });
+  }
+ finally {
     conn.release();
   }
 });
