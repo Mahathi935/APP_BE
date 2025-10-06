@@ -266,34 +266,6 @@ app.get(
   }
 );
 
-// ----------------- Appointments & Doctor Slots -----------------
-/*
-Run these SQL commands once in your DB before using the endpoints (examples):
-
--- doctor_slots table
-CREATE TABLE IF NOT EXISTS doctor_slots (
-  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  doctor_user_id INT NOT NULL,
-  slot_at DATETIME NOT NULL,
-  is_booked TINYINT(1) NOT NULL DEFAULT 0,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY ux_doctor_slot (doctor_user_id, slot_at),
-  FOREIGN KEY (doctor_user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
--- appointments table (example minimal)
-CREATE TABLE IF NOT EXISTS appointments (
-  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  patient_user_id INT NOT NULL,
-  doctor_user_id INT NOT NULL,
-  scheduled_at DATETIME NOT NULL,
-  status VARCHAR(32) NOT NULL DEFAULT 'booked',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (patient_user_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (doctor_user_id) REFERENCES users(id) ON DELETE CASCADE,
-  UNIQUE KEY ux_appt_doctor_time (doctor_user_id, scheduled_at)
-);
-*/
 
 // Patient books by selecting a doctor slot id
 app.post("/appointments", authenticateToken, authorizeRoles("patient"), async (req, res) => {
