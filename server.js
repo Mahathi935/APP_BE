@@ -727,7 +727,7 @@ app.delete("/calendar/events/:id", authenticateToken, async (req, res) => {
 });
 
 app.use(cors({
-  origin: 'https://<your-vercel-domain>.vercel.app',
+  origin: 'https://vercel.com/mahathi-s-projects/nabhasehatmitr-33047-49239-34570-90906-76173',
   allowedHeaders: ['Content-Type', 'Authorization'],
   methods: ['GET','POST','PUT','DELETE','OPTIONS']
 }));
