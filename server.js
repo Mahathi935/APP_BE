@@ -723,3 +723,10 @@ app.delete("/calendar/events/:id", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Failed to delete event" });
   }
 });
+
+app.use(cors({
+  origin: 'https://<your-vercel-domain>.vercel.app',
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET','POST','PUT','DELETE','OPTIONS']
+}));
+app.use(express.json());
