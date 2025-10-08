@@ -162,7 +162,7 @@ app.post("/signup", authLimiter, async (req, res) => {
 });
 
 // Login — authenticates using users.phone_number + password and returns JWT
-app.post("/login", authLimiter, async (req, res) => {
+/*app.post("/login", authLimiter, async (req, res) => {
   const { phone_number, password } = req.body;
   if (!phone_number || !password) {
     return res.status(400).json({ message: "phone_number and password required" });
@@ -191,7 +191,73 @@ app.post("/login", authLimiter, async (req, res) => {
     console.error("LOGIN ERR:", err && err.stack ? err.stack : err);
     res.status(500).json({ message: "Login error" });
   }
+});*/
+
+// ---- traced login (temporary debug) ----
+app.post("/login", authLimiter, async (req, res) => {
+  const { phone_number, password } = req.body;
+  if (!phone_number || !password) {
+    return res.status(400).json({ message: "phone_number and password required" });
+  }
+
+  try {
+    // checkpoint 1: can we query the user?
+    const [rows] = await pool.query(
+      "SELECT id, phone_number, password, role, name FROM users WHERE phone_number = ? LIMIT 1",
+      [phone_number]
+    );
+    const user = rows && rows[0];
+    console.error("LOGIN DBG: checkpoint=1 userFound=", !!user);
+
+    if (!user) return res.status(400).json({ message: "Invalid phone number or password" });
+
+    // checkpoint 2: compare password
+    let ok = false;
+    try {
+      ok = await bcrypt.compare(password, user.password);
+      console.error("LOGIN DBG: checkpoint=2 bcryptCompareResult=", ok);
+    } catch (e) {
+      console.error("LOGIN DBG: checkpoint=2 bcrypt threw:", e && (e.message || e));
+      throw e;
+    }
+
+    if (!ok) return res.status(400).json({ message: "Invalid phone number or password" });
+
+    // checkpoint 3: JWT secret presence
+    console.error("LOGIN DBG: checkpoint=3 JWT_SECRET_present=", !!JWT_SECRET);
+
+    let token;
+    try {
+      token = jwt.sign(
+        { id: user.id, phone_number: user.phone_number, role: user.role },
+        JWT_SECRET,
+        { expiresIn: "1h" }
+      );
+      console.error("LOGIN DBG: checkpoint=4 token_created_len=", token && token.length);
+    } catch (e) {
+      console.error("LOGIN DBG: checkpoint=3 jwt.sign threw:", e && (e.message || e));
+      throw e;
+    }
+
+    return res.json({ token });
+  } catch (err) {
+    // keep the richer error logging we added earlier
+    try {
+      console.error("LOGIN ERR (full):", err && (err.stack || err));
+      console.error("LOGIN ERR - code:", err && err.code);
+      console.error("LOGIN ERR - errno:", err && err.errno);
+      console.error("LOGIN ERR - sqlMessage:", err && err.sqlMessage);
+      console.error("LOGIN ERR - sqlState:", err && err.sqlState);
+    } catch (e) {
+      console.error("LOGIN ERR - failed to stringify err:", e);
+    }
+    console.error("DB_HOST from env:", process.env.DB_HOST);
+    console.error("DB_USER from env:", process.env.DB_USER);
+    res.status(500).json({ message: "Login error" });
+  }
 });
+// ---- end traced login ----
+
 
 // ----------------- Middleware -----------------
 function authenticateToken(req, res, next) {
