@@ -68,7 +68,7 @@ function validateDateTimeSQL(dt) {
 // doctors(user_id, license_number, specialization), patients(user_id)
 app.post("/signup", authLimiter, async (req, res) => {
   const {
-    phone_number,
+    email,
     password,
     role,
     name,
@@ -78,10 +78,10 @@ app.post("/signup", authLimiter, async (req, res) => {
     specialization,
   } = req.body;
 
-  if (!phone_number || !password || !role || !name || !sex || !date_of_birth) {
+  if (!email || !password || !role || !name || !sex || !date_of_birth) {
     return res.status(400).json({
       message:
-        "phone_number, password, role, name, sex, and date_of_birth are required",
+        "email, password, role, name, sex, and date_of_birth are required",
     });
   }
 
@@ -105,8 +105,8 @@ app.post("/signup", authLimiter, async (req, res) => {
 
     // Ensure phone_number unique
     const [existing] = await conn.query(
-      "SELECT id FROM users WHERE phone_number = ? LIMIT 1",
-      [phone_number]
+      "SELECT id FROM users WHERE email = ? LIMIT 1",
+      [email]
     );
     if (existing.length > 0) {
       await conn.rollback();
@@ -119,9 +119,9 @@ app.post("/signup", authLimiter, async (req, res) => {
 
     // Insert into users table
     const [userResult] = await conn.query(
-      `INSERT INTO users (phone_number, password, role, name, sex, date_of_birth, created_at)
+      `INSERT INTO users (email, password, role, name, sex, date_of_birth, created_at)
        VALUES (?, ?, ?, ?, ?, ?, NOW())`,
-      [phone_number, hashed, role, name, sex, date_of_birth]
+      [email, hashed, role, name, sex, date_of_birth]
     );
 
     const userId = userResult.insertId;
@@ -195,21 +195,21 @@ app.post("/signup", authLimiter, async (req, res) => {
 
 // ---- traced login (temporary debug) ----
 app.post("/login", authLimiter, async (req, res) => {
-  const { phone_number, password } = req.body;
-  if (!phone_number || !password) {
-    return res.status(400).json({ message: "phone_number and password required" });
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ message: "email and password required" });
   }
 
   try {
     // checkpoint 1: can we query the user?
     const [rows] = await pool.query(
-      "SELECT id, phone_number, password, role, name FROM users WHERE phone_number = ? LIMIT 1",
-      [phone_number]
+      "SELECT id, email, password, role, name FROM users WHERE email = ? LIMIT 1",
+      [email]
     );
     const user = rows && rows[0];
     console.error("LOGIN DBG: checkpoint=1 userFound=", !!user);
 
-    if (!user) return res.status(400).json({ message: "Invalid phone number or password" });
+    if (!user) return res.status(400).json({ message: "Invalid email or password" });
 
     // checkpoint 2: compare password
     let ok = false;
@@ -221,7 +221,7 @@ app.post("/login", authLimiter, async (req, res) => {
       throw e;
     }
 
-    if (!ok) return res.status(400).json({ message: "Invalid phone number or password" });
+    if (!ok) return res.status(400).json({ message: "Invalid email or password" });
 
     // checkpoint 3: JWT secret presence
     console.error("LOGIN DBG: checkpoint=3 JWT_SECRET_present=", !!JWT_SECRET);
@@ -229,7 +229,7 @@ app.post("/login", authLimiter, async (req, res) => {
     let token;
     try {
       token = jwt.sign(
-        { id: user.id, phone_number: user.phone_number, role: user.role },
+        { id: user.id, email: user.email, role: user.role },
         JWT_SECRET,
         { expiresIn: "1h" }
       );
@@ -267,7 +267,7 @@ function authenticateToken(req, res, next) {
 
   jwt.verify(token, JWT_SECRET, (err, payload) => {
     if (err) return res.status(403).json({ message: "Invalid token" });
-    req.user = payload; // { id, phone_number, role }
+    req.user = payload; // { id, email, role }
     next();
   });
 }
@@ -282,11 +282,11 @@ function authorizeRoles(...allowedRoles) {
 }
 
 // ----------------- Profiles -----------------
-// /profile returns users.id, phone_number, role, name, sex, date_of_birth
+// /profile returns users.id, email, role, name, sex, date_of_birth
 app.get("/profile", authenticateToken, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT id, phone_number, role, name, sex, date_of_birth, created_at
+      `SELECT id, email, role, name, sex, date_of_birth, created_at
        FROM users WHERE id = ? LIMIT 1`,
       [req.user.id]
     );
@@ -307,7 +307,7 @@ app.get(
   async (req, res) => {
     try {
       const [rows] = await pool.query(
-        `SELECT u.id, u.phone_number, u.role, u.name, u.sex, u.date_of_birth, u.created_at
+        `SELECT u.id, u.email, u.role, u.name, u.sex, u.date_of_birth, u.created_at
          FROM users u
          JOIN patients p ON u.id = p.user_id
          WHERE u.id = ? LIMIT 1`,
@@ -330,7 +330,7 @@ app.get(
   async (req, res) => {
     try {
       const [rows] = await pool.query(
-        `SELECT u.id, u.phone_number, u.role, u.name, u.sex, u.date_of_birth, u.created_at,
+        `SELECT u.id, u.email, u.role, u.name, u.sex, u.date_of_birth, u.created_at,
                 d.license_number, d.specialization
          FROM users u
          JOIN doctors d ON u.id = d.user_id
@@ -413,7 +413,7 @@ app.post("/appointments", authenticateToken, authorizeRoles("patient"), async (r
 app.get("/appointments", authenticateToken, authorizeRoles("doctor"), async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT a.id, a.patient_user_id, pu.name AS patient_name, pu.phone_number AS patient_phone,
+      `SELECT a.id, a.patient_user_id, pu.name AS patient_name, pu.email AS patient_phone,
               a.doctor_user_id, du.name AS doctor_name,
               a.scheduled_at, a.status, a.created_at
        FROM appointments a
@@ -435,7 +435,7 @@ app.get("/appointments/me", authenticateToken, authorizeRoles("patient"), async 
   try {
     const [rows] = await pool.query(
       `SELECT a.id, a.patient_user_id, pu.name AS patient_name,
-              a.doctor_user_id, du.name AS doctor_name, du.phone_number AS doctor_phone,
+              a.doctor_user_id, du.name AS doctor_name, du.email AS doctor_phone,
               a.scheduled_at, a.status, a.created_at
        FROM appointments a
        JOIN users pu ON pu.id = a.patient_user_id
@@ -451,13 +451,13 @@ app.get("/appointments/me", authenticateToken, authorizeRoles("patient"), async 
   }
 });
 
-// Patient: view doctor's public slots by phone_number or username fallback
+// Patient: view doctor's public slots by email or username fallback
 app.get("/doctors/:username/slots", authenticateToken, authorizeRoles("patient"), async (req, res) => {
   const doctorUsername = req.params.username;
   try {
-    // First try phone_number (your login uses phone_number)
+    // First try email (your login email)
     const [[doctorByPhone]] = await pool.query(
-      "SELECT id FROM users WHERE phone_number = ? AND role = 'doctor' LIMIT 1",
+      "SELECT id FROM users WHERE email = ? AND role = 'doctor' LIMIT 1",
       [doctorUsername]
     );
 

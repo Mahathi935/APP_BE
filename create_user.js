@@ -6,7 +6,7 @@
 import mysql from 'mysql2/promise';
 import bcrypt from 'bcrypt';
 
-const phone = process.argv[2] || '+919000000001';
+const email = process.argv[2] || 'patient1@email.com';
 const plain = process.argv[3] || 'patientpass123';
 const dob = process.argv[4] || '1990-01-01'; // YYYY-MM-DD
 const name = process.argv[5] || 'Test Patient';
@@ -29,8 +29,8 @@ const sex = process.argv[7] || 'unspecified';
     const hashed = await bcrypt.hash(plain, rounds);
 
     const [result] = await pool.query(
-      'INSERT INTO users (phone_number, password, role, name, sex, date_of_birth, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
-      [phone, hashed, role, name, sex, dob]
+      'INSERT INTO users (email, password, role, name, sex, date_of_birth, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+      [email, hashed, role, name, sex, dob]
     );
 
     console.log('USER CREATED ID:', result.insertId);
