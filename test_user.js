@@ -8,7 +8,7 @@
 
 import mysql2 from 'mysql2/promise';
 
-const phoneToCheck = process.argv[2] || '+919000000001';
+const phoneToCheck = process.argv[2] || 'patient1@email.com';
 
 (async () => {
   try {
@@ -23,7 +23,7 @@ const phoneToCheck = process.argv[2] || '+919000000001';
     });
 
     const [rows] = await pool.query(
-      'SELECT id, phone_number, role, name, sex, date_of_birth FROM users WHERE phone_number = ? LIMIT 1',
+      'SELECT id, email, role, name, sex, date_of_birth FROM users WHERE email = ? LIMIT 1',
       [phoneToCheck]
     );
 
