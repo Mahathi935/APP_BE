@@ -15,7 +15,7 @@ import cors from 'cors';
 dotenv.config();
 
 const {
-  PORT = 3000,
+  PORT = 3306,
   JWT_SECRET,
   DB_HOST,
   DB_USER,
